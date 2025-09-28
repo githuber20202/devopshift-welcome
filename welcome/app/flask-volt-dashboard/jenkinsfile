@@ -1,17 +1,23 @@
 pipeline {
     agent any
 
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+        skipStagesAfterUnstable()
+    }
+
     environment {
         PYENV_HOME = "${WORKSPACE}/welcome/app/flask-volt-dashboard/.pyenv"
         PROJECT_HOME = "${WORKSPACE}/welcome/app/flask-volt-dashboard"
-        FLASK_APP = 'run.py'
-        FLASK_ENV = 'development'
+        FLASK_APP   = 'run.py'
+        FLASK_ENV   = 'development'
+        USER_CHOICE = ''   // will be set at QA gate
     }
 
     stages {
         stage('Clone Flask Project') {
             steps {
-                // Use the Git plugin to clone the repository
                 git branch: 'jenkins-workshop', url: 'https://github.com/yanivomc/devopshift-welcome.git'
             }
         }
@@ -20,19 +26,15 @@ pipeline {
             steps {
                 dir("${PROJECT_HOME}") {
                     script {
-                        // Install virtualenv if not available
                         sh '''#!/bin/bash
                         if ! command -v virtualenv &> /dev/null; then
                             echo "Installing virtualenv..."
                             pip install virtualenv
                         fi
 
-                        # Delete previously built virtualenv and create a new one
-                        rm -rf $PYENV_HOME
-                        virtualenv $PYENV_HOME
-                        source $PYENV_HOME/bin/activate
-
-                        # Install required Python packages
+                        rm -rf "$PYENV_HOME"
+                        virtualenv "$PYENV_HOME"
+                        source "$PYENV_HOME/bin/activate"
                         pip install -r requirements.txt
                         '''
                     }
@@ -44,18 +46,15 @@ pipeline {
             steps {
                 dir("${PROJECT_HOME}") {
                     script {
-                        // Run Flask app within the virtual environment
                         sh '''#!/bin/bash
-                        source $PYENV_HOME/bin/activate
-                        tasks=$(pgrep -f "flask run")
+                        source "$PYENV_HOME/bin/activate"
+                        tasks=$(pgrep -f "flask run" || true)
                         if [ -n "$tasks" ]; then
                             echo "Stopping existing Flask application..."
                             for pid in $tasks; do
-                                kill -9 $pid
-                                echo "Killed process $pid"
+                                kill -9 "$pid" && echo "Killed process $pid"
                             done
                         fi
-
                         echo "Starting Flask application on 0.0.0.0:5005..."
                         nohup flask run --host=0.0.0.0 --port=5005 > flask_app.log 2>&1 &
                         '''
@@ -68,19 +67,92 @@ pipeline {
             steps {
                 dir("${PROJECT_HOME}") {
                     script {
-                        // Sleep to allow Flask to start
-                        sleep 5
-
-                        // Verify Flask application is running
-                        def tasks = sh(script: "pgrep -f 'flask run'", returnStatus: true) ? '' : sh(script: "pgrep -f 'flask run'", returnStdout: true).trim()
-                        if (!tasks) {
-                            // Print error message and show the flask_app.log file content
+                        sleep 5  // allow Flask to boot
+                        def status = sh(script: "pgrep -f 'flask run' >/dev/null", returnStatus: true)
+                        if (status != 0) {
                             echo "There is a problem with our flask application - printing log below"
-                            sh 'cat flask_app.log'
+                            sh 'cat flask_app.log || true'
                             error "Flask application is not running!"
                         } else {
                             echo "Flask application is running successfully."
                         }
+                    }
+                }
+            }
+        }
+
+        /* -------------------- QA MANUAL GATE -------------------- */
+        stage('QA Gate (Manual Approval)') {
+            steps {
+                script {
+                    // Protect against stale approvals if you later add parallel stages
+                    milestone(1)
+
+                    // Block for a decision with a timeout (auto-abort path)
+                    def decision = null
+                    try {
+                        decision = timeout(time: 30, unit: 'MINUTES') {
+                            input(
+                                id: 'qaGate',
+                                message: """QA sign-off required:
+- Verify the Flask app at: http://${env.NODE_NAME}:5005 (or the agent's accessible IP)
+- Confirm logs are healthy: ${env.WORKSPACE}/welcome/app/flask-volt-dashboard/flask_app.log
+Is the application running successfully?""",
+                                parameters: [
+                                    choice(
+                                        name: 'Decision',
+                                        choices: 'Proceed\nAbort',
+                                        description: 'Choose an option'
+                                    )
+                                ]
+                                // , submitter: 'qa-user-1,qa-lead'   // <-- enable to restrict approvers
+                                // , submitterParameter: 'ApprovedBy'  // <-- capture who approved
+                            )
+                        }
+                    } catch (err) {
+                        // Timeout or user aborted the input dialog
+                        decision = 'Abort'
+                        echo "QA gate timed out or was cancelled: defaulting to Abort."
+                    }
+                    env.USER_CHOICE = decision
+                    echo "QA Decision: ${env.USER_CHOICE}"
+                }
+            }
+        }
+        /* -------------------------------------------------------- */
+
+        stage('Continue the Pipeline') {
+            when {
+                beforeAgent true
+                expression { env.USER_CHOICE == 'Proceed' }
+            }
+            steps {
+                script {
+                    echo 'Continuing the pipeline...'
+                    // Place deploy/test/promote steps here
+                }
+            }
+        }
+
+        stage('Abort the Pipeline') {
+            when {
+                beforeAgent true
+                expression { env.USER_CHOICE == 'Abort' }
+            }
+            steps {
+                script {
+                    error 'Pipeline aborted by the user (QA gate).'
+                }
+            }
+        }
+
+        stage('Finalize the Pipeline') {
+            steps {
+                script {
+                    if (env.USER_CHOICE == 'Proceed') {
+                        echo 'Pipeline completed successfully.'
+                    } else {
+                        echo 'Pipeline aborted by the user or timeout at QA gate.'
                     }
                 }
             }
@@ -91,7 +163,7 @@ pipeline {
         always {
             dir("${PROJECT_HOME}") {
                 echo 'Cleaning up workspace...'
-                sh 'rm -rf $PYENV_HOME'
+                sh 'rm -rf "$PYENV_HOME" || true'
             }
         }
     }
