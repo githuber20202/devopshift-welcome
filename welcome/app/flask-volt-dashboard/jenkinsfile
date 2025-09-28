@@ -2,7 +2,6 @@ pipeline {
     agent any
 
     options {
-        timestamps()
         disableConcurrentBuilds()
         skipStagesAfterUnstable()
     }
@@ -85,10 +84,9 @@ pipeline {
         stage('QA Gate (Manual Approval)') {
             steps {
                 script {
-                    // Protect against stale approvals if you later add parallel stages
+                    // אם אין את התוסף של milestone – אפשר למחוק את השורה הבאה
                     milestone(1)
 
-                    // Block for a decision with a timeout (auto-abort path)
                     def decision = null
                     try {
                         decision = timeout(time: 30, unit: 'MINUTES') {
@@ -105,12 +103,11 @@ Is the application running successfully?""",
                                         description: 'Choose an option'
                                     )
                                 ]
-                                // , submitter: 'qa-user-1,qa-lead'   // <-- enable to restrict approvers
-                                // , submitterParameter: 'ApprovedBy'  // <-- capture who approved
+                                // , submitter: 'qa-user-1,qa-lead'
+                                // , submitterParameter: 'ApprovedBy'
                             )
                         }
                     } catch (err) {
-                        // Timeout or user aborted the input dialog
                         decision = 'Abort'
                         echo "QA gate timed out or was cancelled: defaulting to Abort."
                     }
@@ -129,7 +126,7 @@ Is the application running successfully?""",
             steps {
                 script {
                     echo 'Continuing the pipeline...'
-                    // Place deploy/test/promote steps here
+                    // deploy/test/promote...
                 }
             }
         }
