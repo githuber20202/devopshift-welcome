@@ -80,6 +80,22 @@ pipeline {
             }
         }
 
+        stages {
+        stage('Parallel Tests') {
+            parallel {
+                stage('Test on Chrome') {
+                    steps {
+                        echo 'Testing VOLT on Chrome...'
+                        // Chrome test steps here
+                    }
+                }
+                stage('Test on Firefox') {
+                    steps {
+                        echo 'Testing VOLT on Firefox...'
+                        // Firefox test steps here
+                    }
+                }
+            }
         /* -------------------- QA MANUAL GATE -------------------- */
         stage('QA Gate (Manual Approval)') {
             steps {
@@ -150,6 +166,15 @@ Is the application running successfully?""",
                         echo 'Pipeline completed successfully.'
                     } else {
                         echo 'Pipeline aborted by the user or timeout at QA gate.'
+                    }
+                }
+            }
+        }
+        stage('archiveArtifacts') {
+            steps {
+                dir {
+                    dir("${PROJECT_HOME}") {
+                    archiveArtifacts artifacts: 'flask_app.log', allowEmptyArchive: true
                     }
                 }
             }
