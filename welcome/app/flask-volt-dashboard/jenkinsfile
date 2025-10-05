@@ -96,6 +96,7 @@ pipeline {
                     }
                 }
             }
+        }
         /* -------------------- QA MANUAL GATE -------------------- */
         stage('QA Gate (Manual Approval)') {
             steps {
