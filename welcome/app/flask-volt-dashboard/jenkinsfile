@@ -79,8 +79,6 @@ pipeline {
                 }
             }
         }
-
-        stages {
         stage('Parallel Tests') {
             parallel {
                 stage('Test on Chrome') {
