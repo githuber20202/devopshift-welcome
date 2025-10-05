@@ -171,11 +171,9 @@ Is the application running successfully?""",
         }
         stage('archiveArtifacts') {
             steps {
-                dir {
                     dir("${PROJECT_HOME}") {
                     archiveArtifacts artifacts: 'flask_app.log', allowEmptyArchive: true
                     }
-                }
             }
         }
     }
