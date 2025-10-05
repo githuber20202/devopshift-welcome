@@ -12,6 +12,8 @@ pipeline {
         FLASK_APP   = 'run.py'
         FLASK_ENV   = 'development'
         USER_CHOICE = ''   // will be set at QA gate
+        APP_ENV = 'production'
+        APP_DEBUG = 'false'
     }
 
     stages {
@@ -20,6 +22,13 @@ pipeline {
                 git branch: 'jenkins-workshop', url: 'https://github.com/yanivomc/devopshift-welcome.git'
             }
         }
+
+        stage('Build') {
+            steps {
+                echo "Building Volt app in environment: ${env.APP_ENV}"
+                echo "Debug mode is set to: ${env.APP_DEBUG}"
+                // Build steps here
+            }
 
         stage('Setup Python Environment and Install Dependencies') {
             steps {
